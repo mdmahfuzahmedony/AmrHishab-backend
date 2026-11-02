@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN "shopOpen" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "locationChangeRequest" JSONB;

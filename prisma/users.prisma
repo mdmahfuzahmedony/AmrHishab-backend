@@ -1,0 +1,269 @@
+enum UserRole {
+  ADMIN
+  VENDOR
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum LedgerEntryType {
+  DUE
+  PAYMENT
+}
+
+enum LinkRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum CustomerOrderStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderFulfillmentType {
+  DELIVERY
+  PICKUP
+}
+
+model User {
+  id                    String                @id @default(cuid())
+  name                  String
+  phone                 String                @unique
+  passwordHash          String
+  role                  UserRole              @default(CUSTOMER)
+  status                UserStatus            @default(ACTIVE)
+  phoneVerified         Boolean               @default(false)
+  shopName              String?
+  businessCategoryId    String?
+  shopOpen              Boolean               @default(true)
+  deliveryAvailable     Boolean               @default(false)
+  deliveryFee           Decimal?              @db.Decimal(10, 2)
+  deliveryNote          String?
+  locationChangeRequest Json?
+  division              String?
+  district              String?
+  upazila               String?
+  unionName             String?
+  market                String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  authSessions          AuthSession[]
+  categories            Category[]
+  products              Product[]
+  vendorCustomers       VendorCustomer[]      @relation("VendorCustomers")
+  linkedProfiles        VendorCustomer[]      @relation("LinkedCustomerUser")
+  ledgerEntries         CustomerLedgerEntry[]
+  sales                 Sale[]
+  accountLinkRequests   AccountLinkRequest[]
+  customerOrders       CustomerOrder[]       @relation("CustomerOrders")
+  vendorOrders         CustomerOrder[]       @relation("VendorOrders")
+  businessCategory      BusinessCategory?     @relation(fields: [businessCategoryId], references: [id], onDelete: Restrict)
+
+  @@index([businessCategoryId])
+}
+
+model BusinessCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  englishName String   @unique
+  description String   @default("")
+  icon        String   @default("Store")
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  vendors     User[]
+
+  @@index([isActive, sortOrder])
+}
+
+model AuthSession {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  vendorId  String
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  vendor    User      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  products  Product[]
+
+  @@unique([vendorId, name])
+  @@unique([id, vendorId])
+  @@index([vendorId, createdAt])
+}
+
+model Product {
+  id          String     @id @default(cuid())
+  vendorId    String
+  categoryId  String
+  name        String
+  description String?
+  costPrice   Decimal    @default(0) @db.Decimal(12, 2)
+  price       Decimal    @db.Decimal(12, 2)
+  stock       Decimal    @default(0) @db.Decimal(12, 3)
+  unit        String     @default("pcs")
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  vendor      User       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  category    Category   @relation(fields: [categoryId, vendorId], references: [id, vendorId], onDelete: Restrict)
+  saleItems   SaleItem[]
+  orderItems  CustomerOrderItem[]
+
+  @@index([vendorId, categoryId])
+  @@index([vendorId, isActive])
+}
+
+model VendorCustomer {
+  id           String                @id @default(cuid())
+  vendorId     String
+  name         String
+  phone        String?
+  address      String                @default("")
+  division     String?
+  district     String?
+  upazila      String?
+  unionName    String?
+  village      String?
+  linkedUserId String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  vendor       User                  @relation("VendorCustomers", fields: [vendorId], references: [id], onDelete: Cascade)
+  linkedUser   User?                 @relation("LinkedCustomerUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  entries      CustomerLedgerEntry[]
+  sales        Sale[]
+  linkRequests AccountLinkRequest[]
+
+  @@unique([id, vendorId])
+  @@unique([vendorId, phone])
+  @@index([vendorId, name])
+  @@index([vendorId, phone])
+  @@index([linkedUserId])
+}
+
+model CustomerLedgerEntry {
+  id         String          @id @default(cuid())
+  vendorId   String
+  customerId String
+  saleId     String?         @unique
+  type       LedgerEntryType
+  amount     Decimal         @db.Decimal(12, 2)
+  note       String?
+  createdAt  DateTime        @default(now())
+  vendor     User            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  customer   VendorCustomer  @relation(fields: [customerId, vendorId], references: [id, vendorId], onDelete: Cascade)
+  sale       Sale?           @relation(fields: [saleId], references: [id], onDelete: SetNull)
+
+  @@index([vendorId, customerId, createdAt])
+}
+
+model Sale {
+  id          String               @id @default(cuid())
+  vendorId    String
+  customerId  String
+  totalAmount Decimal              @db.Decimal(12, 2)
+  paidAmount  Decimal              @default(0) @db.Decimal(12, 2)
+  dueAmount   Decimal              @default(0) @db.Decimal(12, 2)
+  note        String?
+  dueDate     DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  vendor      User                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  customer    VendorCustomer       @relation(fields: [customerId, vendorId], references: [id, vendorId], onDelete: Cascade)
+  items       SaleItem[]
+  ledgerEntry CustomerLedgerEntry?
+
+  @@unique([id, vendorId])
+  @@index([vendorId, customerId, createdAt])
+}
+
+model SaleItem {
+  id         String   @id @default(cuid())
+  saleId     String
+  productId  String?
+  name       String
+  quantity   Decimal  @db.Decimal(12, 3)
+  costPrice  Decimal  @default(0) @db.Decimal(12, 2)
+  unitPrice  Decimal  @db.Decimal(12, 2)
+  totalPrice Decimal  @db.Decimal(12, 2)
+  profit     Decimal  @default(0) @db.Decimal(12, 2)
+  unit       String   @default("pcs")
+  createdAt  DateTime @default(now())
+  sale       Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product    Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([saleId])
+}
+
+model AccountLinkRequest {
+  id               String            @id @default(cuid())
+  vendorId         String
+  vendorCustomerId String
+  customerPhone    String
+  token            String            @unique
+  status           LinkRequestStatus @default(PENDING)
+  expiresAt        DateTime
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  vendor           User              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendorCustomer   VendorCustomer    @relation(fields: [vendorCustomerId, vendorId], references: [id, vendorId], onDelete: Cascade)
+
+  @@index([customerPhone, status])
+  @@index([vendorId, vendorCustomerId])
+}
+
+model CustomerOrder {
+  id              String                @id @default(cuid())
+  vendorId        String
+  customerId      String
+  status          CustomerOrderStatus   @default(PENDING)
+  fulfillmentType OrderFulfillmentType
+  deliveryAddress String?
+  note            String?
+  subtotal        Decimal               @db.Decimal(12, 2)
+  deliveryFee     Decimal               @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal               @db.Decimal(12, 2)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  vendor          User                  @relation("VendorOrders", fields: [vendorId], references: [id], onDelete: Cascade)
+  customer        User                  @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
+  items           CustomerOrderItem[]
+
+  @@index([vendorId, status, createdAt])
+  @@index([customerId, createdAt])
+}
+
+model CustomerOrderItem {
+  id        String         @id @default(cuid())
+  orderId   String
+  productId String?
+  name      String
+  quantity  Decimal        @db.Decimal(12, 3)
+  unitPrice Decimal        @db.Decimal(12, 2)
+  totalPrice Decimal       @db.Decimal(12, 2)
+  unit      String         @default("pcs")
+  order     CustomerOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
